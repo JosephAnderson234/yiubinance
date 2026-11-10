@@ -1,0 +1,15 @@
+# Sin puertos publicados: el bot solo sale hacia Telegram (long polling).
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    mem_limit: 256m
+    volumes:
+      - data:/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  data:
