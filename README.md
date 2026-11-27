@@ -1,4 +1,8 @@
-# YiuBinance
+<p align="center">
+  <img src="assets/avatar.svg" width="160" alt="Moneda dorada con lentes de sol, el avatar de YiuBinance">
+</p>
+
+<h1 align="center">YiuBinance</h1>
 
 Bot personal de Telegram para registrar gastos y saber cuánto tienes libre hasta el próximo ingreso. Te avisa como un pata: "hey man, suave" cuando te pasas, "es un buen gusto" cuando vas bien.
 
@@ -7,6 +11,8 @@ Bot personal de Telegram para registrar gastos y saber cuánto tienes libre hast
 1. Crea el bot en [@BotFather](https://t.me/BotFather) con `/newbot`.
 2. En el VPS, ejecuta `bash /root/suave/setup.sh`.
 3. Abre tu bot en Telegram y responde las preguntas iniciales.
+
+Para la foto del bot, en @BotFather usa `/setuserpic` y sube `assets/avatar.png`. La fuente editable es `assets/avatar.svg`; si la cambias, vuelve a exportar el PNG a 512×512.
 
 El token se guarda en `/root/suave/.env`, con permisos solo para root. El bot no publica puertos.
 
