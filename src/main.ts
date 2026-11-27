@@ -1,4 +1,5 @@
 // Punto de entrada: arma las piezas y corre el long polling de Telegram.
+import { Access } from './adapters/access';
 import { Bot } from './adapters/bot';
 import { Store } from './adapters/store';
 import { Telegram } from './adapters/telegram';
@@ -17,7 +18,8 @@ try {
 const store = new Store(config.dbPath);
 const tg = new Telegram(config.token, config.telegramApi);
 const ai = await createAi(process.env);
-const bot = new Bot(store, tg, config.ownerId, config.backupPath, ai, openErApi);
+const access = new Access(config.ownerId, store, config.dataDir);
+const bot = new Bot(tg, access, ai, openErApi);
 
 const TICK_MS = 60_000;
 const RETRY_MS = 5_000;
@@ -36,7 +38,7 @@ console.log(`Bot en marcha. IA ${ai ? 'activa' : 'desactivada'}.`);
 
 while (true) {
   try {
-    const updates = await tg.getUpdates(store.offset);
+    const updates = await tg.getUpdates(access.offset);
     for (const u of updates) await bot.onUpdate(u);
   } catch (err) {
     console.error('Error al consultar Telegram:', err);

@@ -1,12 +1,12 @@
 // Lee y valida el entorno una sola vez.
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 
 export interface Config {
   token: string;
   ownerId: number;
   telegramApi?: string;
-  dbPath: string;
-  backupPath: string;
+  dbPath: string; // base del dueño
+  dataDir: string; // access.db y users/<id>.db de los demás
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -16,5 +16,5 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error('Faltan TELEGRAM_TOKEN u OWNER_ID en el entorno.');
   }
   const dbPath = env.DB_PATH ?? './suave.db';
-  return { token, ownerId, telegramApi: env.TELEGRAM_API, dbPath, backupPath: join(dirname(dbPath), 'backup.tmp.db') };
+  return { token, ownerId, telegramApi: env.TELEGRAM_API, dbPath, dataDir: dirname(dbPath) };
 }

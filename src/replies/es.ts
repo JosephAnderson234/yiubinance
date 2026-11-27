@@ -219,6 +219,31 @@ export const fallback = {
   crashed: 'Algo falló y puede que no se haya anotado. Revisa con: ultimos',
 };
 
+export const access = {
+  requested: 'Hola. Este bot es privado: le pedí acceso al dueño por ti. Te aviso apenas responda.',
+  stillPending: 'Tu solicitud sigue pendiente. Te aviso apenas el dueño responda.',
+  ownerRequest: (name: string, username: string, id: number) =>
+    `Nueva solicitud de acceso:\n${name}${username ? ` (@${username})` : ''}, ID ${id}.\n\n¿Le das acceso? Tendrá su propia cuenta, separada de la tuya.`,
+  approveButton: '✅ Aprobar',
+  denyButton: '❌ Rechazar',
+  approved: (name: string) => `Aprobado: ${name}. Ya puede usar el bot.`,
+  denied: (name: string) => `Rechazado: ${name}. No le volveré a avisar si escribe.`,
+  welcome: (first: string) =>
+    `¡Listo, ya tienes acceso! Tu cuenta es solo tuya: nadie más la ve desde el bot.\n\nTen en cuenta que tus datos se guardan en el servidor del dueño del bot, y que los mensajes libres, audios y capturas se interpretan con IA (Groq o Claude).\n\n${first}`,
+  rejected: 'El dueño no aprobó tu acceso a este bot.',
+  revoked: (name: string) => `Le quité el acceso a ${name}. Sus datos se conservan por si lo vuelves a aprobar.`,
+  restored: (name: string) => `Le devolví el acceso a ${name}.`,
+  notFound: (id: number) => `No encontré a nadie con ID ${id}. Escribe usuarios para ver la lista.`,
+  onlyOwner: 'Solo el dueño puede aprobar solicitudes.',
+  alreadyDecided: 'Esa solicitud ya fue respondida.',
+  list(members: { id: number; name: string; username: string; status: string }[]): string {
+    if (!members.length) return 'Nadie más ha pedido acceso todavía.';
+    const label: Record<string, string> = { pending: 'pendiente', approved: 'con acceso', denied: 'rechazado', revoked: 'sin acceso' };
+    const lines = members.map((m) => `${m.name}${m.username ? ` (@${m.username})` : ''}, ID ${m.id}: ${label[m.status] ?? m.status}`);
+    return `${lines.join('\n')}\n\nPara cambiar: aprobar ID, rechazar ID o quitar ID.`;
+  },
+};
+
 export const notices = {
   weeklySummary(total: number, top: [string, number][], s: Snapshot): string {
     const lines = [`Resumen de la semana: gastaste ${fmt(total)}, sin contar fijos.`];

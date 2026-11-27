@@ -17,10 +17,11 @@ export const openErApi: RateSource = async () => {
   return body.result === 'success' && typeof rate === 'number' && isSaneRate(rate) ? rate : null;
 };
 
-/** Actualiza el tipo de cambio si aún no hay uno de hoy. Devuelve true si lo cambió. */
-export async function refreshRate(store: Store, source: RateSource, ms: number): Promise<boolean> {
+/** Actualiza el tipo de cambio en las bases que aún no tienen el de hoy. Lo pide una sola vez. */
+export async function refreshRate(stores: Store[], source: RateSource, ms: number): Promise<boolean> {
   const today = localDay(ms);
-  if (store.usdRateDay === today) return false;
+  const stale = stores.filter((s) => s.usdRateDay !== today);
+  if (!stale.length) return false;
   let rate: number | null = null;
   try {
     rate = await source();
@@ -28,6 +29,6 @@ export async function refreshRate(store: Store, source: RateSource, ms: number):
     console.error(`Tipo de cambio: ${err instanceof Error ? err.message : 'error'}`);
   }
   if (rate === null || !isSaneRate(rate)) return false;
-  store.setUsdRate(rate, today);
+  for (const s of stale) s.setUsdRate(rate, today);
   return true;
 }

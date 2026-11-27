@@ -10,6 +10,27 @@ Bot personal de Telegram para registrar gastos y saber cuánto tienes libre hast
 
 El token se guarda en `/root/suave/.env`, con permisos solo para root. El bot no publica puertos.
 
+## Varios usuarios
+
+El bot es privado. Quien no sea el dueño (`OWNER_ID`) tiene que pedir acceso:
+
+1. Le escribe al bot y este le responde que pidió acceso. No se guarda nada de sus finanzas.
+2. Al dueño le llega la solicitud con nombre, @usuario, ID y los botones ✅ Aprobar / ❌ Rechazar.
+3. Si se aprueba, la persona recibe la bienvenida, un aviso de privacidad y empieza su propia configuración.
+
+Cada usuario tiene su propia base en `/data/users/<id>.db`, separada de la del dueño, que sigue en `/data/suave.db`. Los avisos y el backup diario de cada uno llegan a su propio chat. Quien fue rechazado o perdió el acceso es ignorado en silencio. En grupos el bot no responde.
+
+Comandos del dueño:
+
+```
+usuarios        lista de solicitudes y su estado
+aprobar 123     da acceso (también devuelve el acceso a alguien a quien se lo quitaste)
+rechazar 123    rechaza una solicitud
+quitar 123      quita el acceso; sus datos se conservan
+```
+
+Ojo: los datos de todos quedan en tu VPS y sus mensajes libres pasan por Groq o Claude con tus claves. El mensaje de bienvenida se lo advierte.
+
 ## IA
 
 Para entender frases libres, audios y capturas, ejecuta `bash /root/suave/setup-ai.sh groq`. Sin clave, el bot funciona igual con los atajos de `ayuda`.
