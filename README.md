@@ -49,6 +49,20 @@ libre = saldo real − ahorro apartado − meta de ahorro pendiente − fijos de
 - 8 p. m.: 3 días sin registrar.
 - 3 a. m.: copia de la base de datos enviada a tu chat, en silencio, si hubo cambios.
 
+## Estructura
+
+```
+src/
+  main.ts, config.ts   arranque y entorno
+  domain/              lógica pura: dinero, fechas, libro, snapshot, Command
+  app/                 casos de uso: execute, onboarding, avisos, backup
+  input/               mensaje → Command: atajos, router y ai/ (Groq, Claude, prompt, validación)
+  replies/es.ts        textos para el usuario
+  adapters/            SQLite, Telegram y el Bot que los une
+```
+
+Las dependencias van en un solo sentido: `domain` ← `app` ← `input` ← `adapters/bot` ← `main`. `domain` no importa nada del proyecto.
+
 ## Operación
 
 ```bash

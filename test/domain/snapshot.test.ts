@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { cycleEndOf, snapshot, type Card, type Income, type Ledger, type Txn } from '../src/engine';
+import type { Card, Income, Ledger, Txn } from '../../src/domain/ledger';
+import { cycleEndOf, snapshot } from '../../src/domain/snapshot';
 
 // 2026-11-04 es miércoles; el domingo siguiente es 2026-11-08.
 const WED = '2026-11-04';

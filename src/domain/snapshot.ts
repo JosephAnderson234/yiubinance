@@ -1,29 +1,6 @@
 // Lógica financiera pura: recibe el libro y una fecha, devuelve cómo vas.
 import { addDays, diffDays, monthDay, nextMonthlyAfter, prevMonthly, weekday, type Day } from './dates';
-
-export type TxnKind =
-  | 'expense' // gasto con Yape/débito/efectivo: baja el saldo
-  | 'income' // ingreso: sube el saldo
-  | 'purchase' // compra con tarjeta: sube la deuda, el saldo no cambia
-  | 'payment' // pago de tarjeta: baja saldo y deuda, no es gasto nuevo
-  | 'adjust' // corrección de saldo (con signo)
-  | 'debt_adjust' // deuda inicial de una tarjeta (con signo)
-  | 'saving'; // apartado de ahorro dentro del mismo saldo (con signo)
-
-export interface Txn {
-  id: number;
-  day: Day;
-  kind: TxnKind;
-  amount: number;
-  description: string;
-  cardId: number | null;
-  fixedId: number | null;
-  incomeId: number | null;
-}
-export interface Card { id: number; name: string; aliases: string[]; limit: number; closeDay: number; dueDay: number }
-export interface Fixed { id: number; name: string; amount: number; day: number; since: Day }
-export interface Income { id: number; name: string; kind: 'weekly' | 'monthly'; amount: number; weekday: number | null; days: number[] }
-export interface Ledger { txns: Txn[]; cards: Card[]; fixed: Fixed[]; incomes: Income[]; savingGoal: number }
+import type { Card, Ledger, Txn } from './ledger';
 
 export type State = 'sobrado' | 'normal' | 'suave' | 'alerta';
 export type Alert =

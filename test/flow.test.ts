@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Bot } from '../src/bot';
-import { snapshot } from '../src/engine';
-import { handle } from '../src/handlers';
-import { dueNotices } from '../src/scheduler';
-import { Store } from '../src/store';
-import type { Telegram } from '../src/telegram';
+import { Bot } from '../src/adapters/bot';
+import { Store } from '../src/adapters/store';
+import type { Telegram } from '../src/adapters/telegram';
+import { dueNotices } from '../src/app/notices';
+import { snapshot } from '../src/domain/snapshot';
+import { handle } from '../src/input/router';
 
 const DAY = '2026-11-04'; // miércoles
 const say = (s: Store, ...msgs: string[]) => msgs.map((m) => handle(s, m, DAY)).at(-1)!;
@@ -23,7 +23,7 @@ describe('configuración inicial', () => {
   test('deja todo guardado', () => {
     const s = configured();
     const l = s.ledger();
-    expect(s.get('step')).toBe('done');
+    expect(s.step).toBe('done');
     expect(l.cards.map((c) => c.name)).toEqual(['CMR', 'bbva credito']);
     expect(l.cards[0]!.limit).toBe(50_000);
     expect(l.incomes.map((i) => i.name)).toEqual(['semana', 'quincena']);
@@ -35,7 +35,7 @@ describe('configuración inicial', () => {
     const s = new Store();
     say(s, '/start');
     expect(say(s, 'no sé')).toContain('No te entendí');
-    expect(s.get('step')).toBe('saldo');
+    expect(s.step).toBe('saldo');
   });
 
   test('se puede empezar con una tarjeta y agregar otra después', () => {
@@ -146,7 +146,7 @@ describe('avisos', () => {
 
   test('un aviso ya enviado no se repite', () => {
     const ms = at('2026-11-08', 20);
-    for (const n of dueNotices(s, ms)) s.set(n.flag, '1');
+    for (const n of dueNotices(s, ms)) s.setFlag(n.flag);
     expect(dueNotices(s, ms)).toEqual([]);
   });
 
@@ -212,13 +212,13 @@ describe('bot', () => {
     const { s, bot, sent } = fake();
     await bot.onUpdate(msg(1, 999, '/start'));
     expect(sent).toEqual([]);
-    expect(s.get('step')).toBeNull();
+    expect(s.step).toBeNull();
   });
 
   test('guarda el offset para no reprocesar mensajes', async () => {
     const { s, bot } = fake();
     await bot.onUpdate(msg(41, 7, '/start'));
-    expect(s.get('offset')).toBe('42');
+    expect(s.offset).toBe(42);
   });
 
   test('responde al dueño y avisa si manda algo que no entiende', async () => {

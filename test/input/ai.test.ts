@@ -33,15 +33,14 @@ const server = Bun.serve({
 afterAll(() => { server.stop(true); });
 process.env.GROQ_API = `http://127.0.0.1:${server.port}/openai/v1`;
 
-const { Ai, AiUnavailable, claudeProvider, createAi, groqProvider, toCommand } = await import('../src/ai');
-const { looksNatural, respond, respondToImage } = await import('../src/assistant');
-const { Bot } = await import('../src/bot');
-const { snapshot } = await import('../src/engine');
-const { handle } = await import('../src/handlers');
-const { Store } = await import('../src/store');
-const { Telegram } = await import('../src/telegram');
-type Reading = import('../src/ai').Reading;
-type Provider = import('../src/ai').Provider;
+const { Ai, AiUnavailable, claudeProvider, createAi, groqProvider, toCommand } = await import('../../src/input/ai');
+const { handle, looksNatural, respond, respondToImage } = await import('../../src/input/router');
+const { Bot } = await import('../../src/adapters/bot');
+const { snapshot } = await import('../../src/domain/snapshot');
+const { Store } = await import('../../src/adapters/store');
+const { Telegram } = await import('../../src/adapters/telegram');
+type Reading = import('../../src/input/ai').Reading;
+type Provider = import('../../src/input/ai').Provider;
 
 function reading(p: Partial<Reading> = {}): Reading {
   return { action: 'expense', amount: 15, description: 'menu', card: '', days_ago: 0, question: '', ...p };
