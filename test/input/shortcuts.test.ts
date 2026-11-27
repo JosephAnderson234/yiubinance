@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { fmt, parseAmount } from '../src/money';
-import { parse } from '../src/parser';
+import { fmt, parseAmount } from '../../src/domain/money';
+import { parse } from '../../src/input/shortcuts';
 
 const aliases = new Map([['cmr', 1], ['bbva credito', 2], ['credito bbva', 2]]);
 const p = (s: string) => parse(s, aliases);

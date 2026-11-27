@@ -7,4 +7,4 @@ COPY test ./test
 RUN mkdir -p /data && chown bun:bun /data
 USER bun
 ENV DB_PATH=/data/suave.db
-CMD ["bun", "src/index.ts"]
+CMD ["bun", "src/main.ts"]

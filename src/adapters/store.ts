@@ -1,6 +1,7 @@
+// SQLite. La tabla meta guarda el estado suelto del bot; fuera de aquí solo se usa con nombres tipados.
 import { Database } from 'bun:sqlite';
-import type { Day } from './dates';
-import type { Card, Fixed, Income, Ledger, Txn, TxnKind } from './engine';
+import type { Day } from '../domain/dates';
+import type { Card, Fixed, Income, Ledger, Txn, TxnKind } from '../domain/ledger';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -17,6 +18,11 @@ CREATE TABLE IF NOT EXISTS txns (
   id INTEGER PRIMARY KEY, day TEXT NOT NULL, kind TEXT NOT NULL, amount INTEGER NOT NULL,
   description TEXT NOT NULL DEFAULT '', card_id INTEGER, fixed_id INTEGER, income_id INTEGER);
 `;
+
+export type Step = 'saldo' | 'tarjetas' | 'semana' | 'quincena' | 'fijos' | 'ahorro' | 'done';
+export interface Pending { text: string; question: string; at: number }
+export type Flag = `${'summary' | 'close' | 'due' | 'late' | 'idle' | 'backup'}:${string}`;
+type MetaKey = 'step' | 'saving_goal' | 'offset' | 'dirty' | 'pending' | Flag;
 
 export type NewTxn = {
   day: Day;
@@ -37,14 +43,43 @@ export class Store {
     this.db.exec(SCHEMA);
   }
 
-  get(key: string): string | null {
+  private get(key: MetaKey): string | null {
     const row = this.db.query('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | null;
     return row?.value ?? null;
   }
 
-  set(key: string, value: string) {
+  private set(key: MetaKey, value: string) {
     this.db.query('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
   }
+
+  /** Paso del onboarding; null si aún no empieza. */
+  get step(): Step | null { return this.get('step') as Step | null; }
+  set step(v: Step) { this.set('step', v); }
+  get configured() { return this.step === 'done'; }
+
+  get savingGoal() { return Number(this.get('saving_goal') ?? 0); }
+  set savingGoal(cents: number) { this.set('saving_goal', String(cents)); }
+
+  /** Próximo update_id que se pide a Telegram. */
+  get offset() { return Number(this.get('offset') ?? 0); }
+  set offset(v: number) { this.set('offset', String(v)); }
+
+  /** Hubo cambios desde el último backup. */
+  get dirty() { return this.get('dirty') === '1'; }
+  set dirty(v: boolean) { this.set('dirty', v ? '1' : '0'); }
+
+  /** Aclaración que la IA dejó pendiente. Se consume al leerla. */
+  takePending(): Pending | null {
+    const raw = this.get('pending');
+    if (!raw) return null;
+    this.set('pending', '');
+    return JSON.parse(raw) as Pending;
+  }
+  setPending(p: Pending) { this.set('pending', JSON.stringify(p)); }
+
+  /** Marcas de una sola vez: avisos ya enviados y backups del día. */
+  hasFlag(flag: Flag) { return this.get(flag) !== null; }
+  setFlag(flag: Flag) { this.set(flag, '1'); }
 
   ledger(): Ledger {
     const txns = this.db.query('SELECT * FROM txns ORDER BY id').all().map((r: any): Txn => ({
@@ -61,7 +96,7 @@ export class Store {
       id: r.id, name: r.name, kind: r.kind, amount: r.amount, weekday: r.weekday,
       days: r.days ? r.days.split(',').map(Number) : [],
     }));
-    return { txns, cards, fixed, incomes, savingGoal: Number(this.get('saving_goal') ?? 0) };
+    return { txns, cards, fixed, incomes, savingGoal: this.savingGoal };
   }
 
   addTxn(t: NewTxn) {
