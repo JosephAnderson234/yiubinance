@@ -69,6 +69,7 @@ Las dependencias van en un solo sentido: `domain` ← `app` ← `input` ← `ada
 docker compose logs -f bot          # ver logs
 docker compose up -d --build        # aplicar cambios
 bun test                            # correr tests
+bun run typecheck                   # revisar tipos
 ```
 
 Para restaurar una copia, detén el bot y reemplaza `/data/suave.db` en el volumen `suave_data` por el archivo recibido en Telegram.

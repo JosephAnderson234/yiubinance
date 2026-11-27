@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "start": "bun src/main.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.11",
+    "typescript": "5.9.3"
   }
 }
