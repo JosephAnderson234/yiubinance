@@ -1,6 +1,8 @@
 // El libro: movimientos, tarjetas, fijos e ingresos. Todo el dinero va en céntimos.
 import type { Day } from './dates';
 
+export type Currency = 'PEN' | 'USD';
+
 export type TxnKind =
   | 'expense' // gasto con Yape/débito/efectivo: baja el saldo
   | 'income' // ingreso: sube el saldo
@@ -19,6 +21,10 @@ export interface Txn {
   cardId: number | null;
   fixedId: number | null;
   incomeId: number | null;
+  category: string; // solo en gastos y compras; '' en lo demás
+  currency: Currency; // moneda en que se registró; amount siempre está en soles
+  original: number | null; // monto en la moneda original, en centavos, si no fue en soles
+  auto: boolean; // lo creó la configuración (saldo o deuda inicial): deshacer no lo toca
 }
 export interface Card { id: number; name: string; aliases: string[]; limit: number; closeDay: number; dueDay: number }
 export interface Fixed { id: number; name: string; amount: number; day: number; since: Day }

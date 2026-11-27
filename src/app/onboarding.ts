@@ -27,7 +27,7 @@ export function onboard(store: Store, text: string, today: Day): string {
   if (step === 'saldo') {
     const amount = parseAmount(t);
     if (amount === null) return retry;
-    store.addTxn({ day: today, kind: 'adjust', amount, description: 'saldo inicial' });
+    store.addTxn({ day: today, kind: 'adjust', amount, description: 'saldo inicial', auto: true });
     return next('tarjetas');
   }
   if (step === 'tarjetas') {

@@ -1,7 +1,8 @@
 // Todo lo que el bot le dice al usuario. El tono ("hey man, suave") se cambia solo aquí.
 import { WEEKDAYS, weekday, type Day } from '../domain/dates';
 import type { Ledger, Txn } from '../domain/ledger';
-import { fmt } from '../domain/money';
+import { fmt, fmtUsd } from '../domain/money';
+import type { MonthReport } from '../domain/reports';
 import type { CardStatus, Snapshot } from '../domain/snapshot';
 
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -56,6 +57,9 @@ export function fullStatus(s: Snapshot): string {
   if (s.savedTotal) lines.push(`Ahorro apartado: ${fmt(s.savedTotal)}`);
   if (s.goalLeft) lines.push(`Meta de ahorro pendiente: ${fmt(s.goalLeft)}`);
   for (const f of s.fixedPending) lines.push(`Fijo ${f.name}: ${fmt(f.amount)} (${shortDay(f.date)})`);
+  for (const f of s.fixedUpcoming) {
+    if (f.reserve > 0) lines.push(`Fijo ${f.name} (${shortDay(f.date)}): apartado ${fmt(f.reserve)} de ${fmt(f.amount)}`);
+  }
   for (const c of s.cards) {
     lines.push(cardLine(c));
     if (c.reserve > 0) lines.push(`  Apartado para pagarla: ${fmt(c.reserve)}`);
@@ -63,9 +67,13 @@ export function fullStatus(s: Snapshot): string {
   return `${lines.join('\n')}\n\n${brief(s)}`;
 }
 
-export function askReply(s: Snapshot, amount: number): string {
+/** Monto en soles; si fue en dólares, muestra ambos y el tipo de cambio. */
+export const money = (pen: number, usd: number | null, rate: number | null = null) =>
+  usd === null ? fmt(pen) : `${fmtUsd(usd)} (${fmt(pen)}${rate ? ` a ${rate.toFixed(3)}` : ''})`;
+
+export function askReply(s: Snapshot, shown: string): string {
   const opening = s.state === 'alerta' ? 'Mejor no.' : s.state === 'suave' ? 'Se puede, pero suave.' : 'Dale.';
-  return `${opening} Con ${fmt(amount)} menos:\n${brief(s)}\n\nNo anoté nada. Si lo compras, regístralo.`;
+  return `${opening} Con ${shown} menos:\n${brief(s)}\n\nNo anoté nada. Si lo compras, regístralo.`;
 }
 
 /** Los ejemplos usan tu primera tarjeta, para que puedas copiarlos tal cual. */
@@ -75,6 +83,8 @@ export const helpText = (cards: string[]) => {
 
 Atajos para registrar:
 25 almuerzo: gasto con Yape o débito
+$15 netflix ${c}: gasto en dólares (también 15 usd)
+25 almuerzo #salidas: elige la categoría
 180 zapatillas ${c}: compra con tarjeta de crédito
 pago ${c} 300: pago de tarjeta (pago ${c} = paga todo)
 cuenta ${c} 230: corrige con el monto de tu estado de cuenta
@@ -86,6 +96,7 @@ Cómo consultar:
 puedo 120 cena: te responde sin anotar nada
 como voy: resumen completo
 ultimos: últimos movimientos
+mes: resumen del mes por categoría (mes pasado para el anterior)
 deshacer: borra el último movimiento
 ajustes: ve tus tarjetas, fijos e ingresos
 
@@ -95,6 +106,7 @@ ingreso semana 400 domingo
 ingreso quincena 350 dias 15,30
 tarjeta visa linea 3000 cierre 20 pago 5
 meta ahorro 50
+dolar 3.75: fija el tipo de cambio (se actualiza solo cada día)
 borrar fijo internet (también ingreso o tarjeta)`;
 };
 
@@ -109,10 +121,10 @@ export function describeTxn(t: Txn, l: Ledger): string {
     debt_adjust: `${t.description} ${card ?? ''}`.trim(),
     saving: 'ahorro',
   };
-  return `${shortDay(t.day)} ${label[t.kind]}: ${fmt(t.amount)}`;
+  return `${shortDay(t.day)} ${label[t.kind]}: ${money(t.amount, t.original)}`;
 }
 
-export function settingsText(l: Ledger): string {
+export function settingsText(l: Ledger, usdRate: number | null): string {
   const lines = ['Tarjetas:'];
   for (const c of l.cards) lines.push(`${c.name}: línea ${fmt(c.limit)}, sale el ${c.closeDay}, pago hasta el ${c.dueDay}`);
   lines.push('', 'Ingresos:');
@@ -122,8 +134,52 @@ export function settingsText(l: Ledger): string {
   lines.push('', 'Fijos:');
   for (const f of l.fixed) lines.push(`${f.name}: ${fmt(f.amount)}, día ${f.day}`);
   lines.push('', `Meta de ahorro semanal: ${fmt(l.savingGoal)}`);
+  lines.push(`Tipo de cambio: ${usdRate ? `S/ ${usdRate.toFixed(3)} por dólar` : 'aún no lo tengo'}`);
   return lines.join('\n');
 }
+
+/** Respuesta al pagar un fijo: dice cuánto se movió el libre, porque ya estaba apartado en parte o del todo. */
+export function fixedPaidLine(name: string, shown: string, libreDelta: number): string {
+  const effect =
+    libreDelta === 0 ? 'Ya lo tenía apartado, tu libre no cambia.'
+    : libreDelta < 0 ? `Tu libre bajó ${fmt(-libreDelta)}: faltaba apartar esa parte.`
+    : `Tu libre subió ${fmt(libreDelta)}: tenía apartado más de lo que pagaste.`;
+  return `Pagaste tu fijo ${name}: ${shown}. ${effect}`;
+}
+
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthName = (m: string) => MONTHS[Number(m.slice(5, 7)) - 1]!;
+const prevMonthName = (m: string) => MONTHS[(Number(m.slice(5, 7)) + 10) % 12]!;
+const CATEGORY_NAMES: Record<string, string> = { educacion: 'educación' };
+const catName = (c: string) => CATEGORY_NAMES[c] ?? c;
+const pct = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : 0);
+
+export function monthSummary(r: MonthReport, current: boolean): string {
+  const name = monthName(r.month);
+  if (!r.spent && !r.fixedPaid && !r.income && !r.saved) return `No hay movimientos en ${name}.`;
+  const lines = [`${current ? `En lo que va de ${name}` : `En ${name}`} gastaste ${fmt(r.spent)}, sin contar fijos.`];
+  if (r.byCategory.length) {
+    lines.push('', 'Por categoría:');
+    for (const [cat, amount] of r.byCategory) lines.push(`${catName(cat)}: ${fmt(amount)} (${pct(amount, r.spent)}%)`);
+  }
+  const extra: string[] = [];
+  if (r.fixedPaid) extra.push(`Fijos pagados: ${fmt(r.fixedPaid)}`);
+  if (r.income) extra.push(`Ingresos: ${fmt(r.income)}`);
+  if (r.saved) extra.push(`${r.saved > 0 ? 'Ahorraste' : 'Sacaste del ahorro'}: ${fmt(Math.abs(r.saved))}`);
+  if (r.previousSpent !== null && !current) {
+    const diff = r.spent - r.previousSpent;
+    const prev = prevMonthName(r.month);
+    if (diff === 0) extra.push(`Gastaste lo mismo que en ${prev}.`);
+    else {
+      const rel = r.previousSpent ? ` (${diff > 0 ? '+' : '-'}${pct(Math.abs(diff), r.previousSpent)}%)` : '';
+      extra.push(`Gastaste ${fmt(Math.abs(diff))} ${diff > 0 ? 'más' : 'menos'} que en ${prev}${rel}.`);
+    }
+  }
+  if (extra.length) lines.push('', ...extra);
+  return lines.join('\n');
+}
+
+export const rateSaved = (rate: number) => `Tipo de cambio guardado: S/ ${rate.toFixed(3)} por dólar. Mañana lo vuelvo a actualizar solo.`;
 
 export const dated = (day: Day, today: Day) => (day === today ? '' : ` Con fecha ${shortDay(day)}.`);
 
@@ -158,13 +214,15 @@ export const fallback = {
   voiceFailed: 'No pude escuchar el audio ahora y no anoté nada. Escríbelo: 25 almuerzo',
   heard: (text: string, reply: string) => `Escuché: "${text}"\n\n${reply}`,
   unsupported: 'Eso no lo entiendo todavía. Mándame texto, un audio o una captura.',
+  noRate: 'Aún no tengo el tipo de cambio y no anoté nada. Dímelo así: dolar 3.75',
+  photoDuplicate: 'Esa captura ya la anoté, no la vuelvo a registrar. Si de verdad fueron dos, escríbelo: 25 almuerzo',
   crashed: 'Algo falló y puede que no se haya anotado. Revisa con: ultimos',
 };
 
 export const notices = {
   weeklySummary(total: number, top: [string, number][], s: Snapshot): string {
-    const lines = [`Resumen de la semana: gastaste ${fmt(total)}.`];
-    if (top.length) lines.push(`Lo que más pesó: ${top.map(([n, a]) => `${n} ${fmt(a)}`).join(', ')}.`);
+    const lines = [`Resumen de la semana: gastaste ${fmt(total)}, sin contar fijos.`];
+    if (top.length) lines.push(`Lo que más pesó: ${top.map(([n, a]) => `${catName(n)} ${fmt(a)}`).join(', ')}.`);
     lines.push('', brief(s), '', '¿Cuánto tienes de verdad en tu cuenta? Responde, por ejemplo: saldo 820');
     if (s.goalLeft > 0) lines.push(`Y si puedes, aparta tu ahorro: ahorro ${s.goalLeft / 100}`);
     return lines.join('\n');
@@ -177,6 +235,7 @@ export const notices = {
     `Ojo, ${daysLeft === 0 ? 'hoy' : 'en 2 días'} vence ${card} y sigues debiendo ${fmt(billed)} de esa cuenta.`,
   incomeLate: (name: string, late: number, amount: number) =>
     `¿Ya te cayó ${name}? Debía llegar hace ${late} días. Si llegó, escribe: +${amount / 100} ${name}`,
+  monthly: (r: MonthReport) => `Cerró ${monthName(r.month)}. ${monthSummary(r, false)}`,
   idle: (days: number) =>
     `Llevas ${days} días sin anotar nada. ¿Gastaste algo? Si no te acuerdas, pásame tu saldo: saldo 820`,
 };

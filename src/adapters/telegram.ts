@@ -6,7 +6,7 @@ export interface Update {
     text?: string;
     caption?: string;
     voice?: { file_id: string; duration: number };
-    photo?: { file_id: string; file_size?: number }[];
+    photo?: { file_id: string; file_unique_id?: string; file_size?: number }[];
   };
 }
 

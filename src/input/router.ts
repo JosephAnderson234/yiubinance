@@ -18,7 +18,7 @@ const DATE_WORDS = new RegExp(`\\b(ayer|anteayer|antier|hace|${WEEKDAYS.join('|'
 export function looksNatural(text: string): boolean {
   const t = normalize(text);
   if (DATE_WORDS.test(t) || t.split(' ').length > MAX_PLAIN_WORDS) return true;
-  return !(/^(s\/\.?\s*)?\d/.test(t) || /^\S+ [\d.,]+$/.test(t));
+  return !(/^(s\/\.?\s*|\$\s*)?\d/.test(t) || /^\S+ [\d.,]+$/.test(t));
 }
 
 /** Respuesta sin IA: onboarding o atajos. */

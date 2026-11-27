@@ -1,13 +1,28 @@
 // Ejecuta un comando ya interpretado contra el libro y devuelve la respuesta.
 import type { Store } from '../adapters/store';
+import { categorize } from '../domain/categories';
 import type { Command } from '../domain/command';
 import { prevMonthly, type Day } from '../domain/dates';
-import type { Txn } from '../domain/ledger';
-import { fmt } from '../domain/money';
+import type { Currency, Txn } from '../domain/ledger';
+import { fmt, usdToPen } from '../domain/money';
 import { hasWord } from '../domain/normalize';
+import { monthOf, monthReport } from '../domain/reports';
 import { debtOf, snapshot } from '../domain/snapshot';
-import { askReply, brief, cardLine, dated, describeTxn, fallback, fullStatus, helpText, settingsText } from '../replies/es';
+import {
+  askReply, brief, cardLine, dated, describeTxn, fallback, fixedPaidLine, fullStatus, helpText, money, monthSummary,
+  rateSaved, settingsText,
+} from '../replies/es';
 import { saveCard } from './cards';
+
+interface Priced { amount: number; currency: Currency; original: number | null; rate: number | null }
+
+/** Pasa el monto a soles. Devuelve null si es en dólares y aún no hay tipo de cambio. */
+function price(store: Store, cmd: { amount: number; currency?: 'USD' }): Priced | null {
+  if (cmd.currency !== 'USD') return { amount: cmd.amount, currency: 'PEN', original: null, rate: null };
+  const rate = store.usdRate;
+  if (rate === null) return null;
+  return { amount: usdToPen(cmd.amount, rate), currency: 'USD', original: cmd.amount, rate };
+}
 
 export function execute(store: Store, cmd: Command, today: Day): string {
   const l = store.ledger();
@@ -21,42 +36,62 @@ export function execute(store: Store, cmd: Command, today: Day): string {
     case 'status':
       return fullStatus(after());
     case 'settings':
-      return settingsText(l);
+      return settingsText(l, store.usdRate);
     case 'recent': {
       const last = l.txns.slice(-8).reverse();
       return last.length ? last.map((t) => describeTxn(t, l)).join('\n') : 'Aún no hay movimientos.';
     }
+    case 'month':
+      return monthSummary(monthReport(l, monthOf(today, cmd.offset)), monthOf(today, cmd.offset) === monthOf(today));
     case 'undo': {
-      const last = l.txns[l.txns.length - 1];
+      const last = store.lastUserTxn();
       if (!last) return 'No hay nada que deshacer.';
       store.deleteTxn(last.id);
       return `Borré: ${describeTxn(last, l)}\n\n${brief(after())}`;
     }
     case 'expense': {
+      const p = price(store, cmd);
+      if (!p) return fallback.noRate;
       const fixed = l.fixed.find((f) => hasWord(cmd.description, f.name));
       const kind = cmd.cardId === null ? 'expense' : 'purchase';
       const day = cmd.day ?? today;
-      store.addTxn({ day, kind, amount: cmd.amount, description: cmd.description, cardId: cmd.cardId, fixedId: fixed?.id });
+      const before = snapshot(l, today).libre;
+      store.addTxn({
+        day, kind, amount: p.amount, description: cmd.description, cardId: cmd.cardId, fixedId: fixed?.id,
+        category: cmd.category ?? categorize(cmd.description), currency: p.currency, original: p.original,
+      });
+      const s = after();
       const when = dated(day, today);
-      if (cmd.cardId === null) return `Anotado: ${cmd.description}, ${fmt(cmd.amount)}.${when}\n${brief(after())}`;
-      const card = cardOf(cmd.cardId);
-      return `Anotado: ${cmd.description}, ${fmt(cmd.amount)} con ${card.card.name}.${when}\n${cardLine(card)}\n${brief(after())}`;
+      const shown = money(p.amount, p.original, p.rate);
+      const card = cmd.cardId === null ? null : cardOf(cmd.cardId);
+      const head = fixed
+        ? `${fixedPaidLine(fixed.name, shown, s.libre - before)}${when}`
+        : `Anotado: ${cmd.description}, ${shown}${card ? ` con ${card.card.name}` : ''}.${when}`;
+      return [head, card && cardLine(card), brief(s)].filter(Boolean).join('\n');
     }
     case 'ask': {
+      const p = price(store, cmd);
+      if (!p) return fallback.noRate;
       const fake: Txn = {
-        id: -1, day: today, kind: cmd.cardId === null ? 'expense' : 'purchase', amount: cmd.amount,
+        id: -1, day: today, kind: cmd.cardId === null ? 'expense' : 'purchase', amount: p.amount,
         description: cmd.description, cardId: cmd.cardId, fixedId: null, incomeId: null,
+        category: '', currency: p.currency, original: p.original, auto: false,
       };
-      return askReply(snapshot({ ...l, txns: [...l.txns, fake] }, today), cmd.amount);
+      return askReply(snapshot({ ...l, txns: [...l.txns, fake] }, today), money(p.amount, p.original, p.rate));
     }
     case 'income': {
+      const p = price(store, cmd);
+      if (!p) return fallback.noRate;
       const source =
         l.incomes.find((i) => cmd.description && hasWord(cmd.description, i.name)) ??
         (cmd.description ? undefined : l.incomes.find((i) => i.kind === 'weekly'));
       const before = snapshot(l, today).libre;
-      store.addTxn({ day: cmd.day ?? today, kind: 'income', amount: cmd.amount, description: cmd.description || source?.name, incomeId: source?.id });
+      store.addTxn({
+        day: cmd.day ?? today, kind: 'income', amount: p.amount, description: cmd.description || source?.name,
+        incomeId: source?.id, currency: p.currency, original: p.original,
+      });
       const s = after();
-      return `Ingreso anotado: ${fmt(cmd.amount)}. Tu libre subió ${fmt(s.libre - before)}.\n${brief(s)}`;
+      return `Ingreso anotado: ${money(p.amount, p.original, p.rate)}. Tu libre subió ${fmt(s.libre - before)}.\n${brief(s)}`;
     }
     case 'pay': {
       const debt = debtOf(l.txns, cmd.cardId);
@@ -64,8 +99,9 @@ export function execute(store: Store, cmd: Command, today: Day): string {
       if (debt <= 0) return `No debes nada en ${name}.`;
       const amount = cmd.amount ?? debt;
       if (amount > debt) return `Solo debes ${fmt(debt)} en ${name}. Revisa el monto.`;
-      store.addTxn({ day: today, kind: 'payment', amount, description: 'pago tarjeta', cardId: cmd.cardId });
-      return `Pago anotado: ${fmt(amount)} a ${name}.\n${cardLine(cardOf(cmd.cardId))}\n${brief(after())}`;
+      const day = cmd.day ?? today;
+      store.addTxn({ day, kind: 'payment', amount, description: 'pago tarjeta', cardId: cmd.cardId });
+      return `Pago anotado: ${fmt(amount)} a ${name}.${dated(day, today)}\n${cardLine(cardOf(cmd.cardId))}\n${brief(after())}`;
     }
     case 'statement': {
       const card = l.cards.find((c) => c.id === cmd.cardId)!;
@@ -86,11 +122,19 @@ export function execute(store: Store, cmd: Command, today: Day): string {
       return `Saldo corregido a ${fmt(cmd.amount)}. ${note}\n${brief(after())}`;
     }
     case 'saving': {
+      if (cmd.amount < 0) {
+        const saved = snapshot(l, today).savedTotal;
+        if (saved <= 0) return 'No tienes ahorro apartado para retirar.';
+        if (-cmd.amount > saved) return `Solo tienes ${fmt(saved)} de ahorro apartado. Para sacarlo todo: retiro ahorro ${saved / 100}`;
+      }
       store.addTxn({ day: today, kind: 'saving', amount: cmd.amount, description: 'ahorro' });
       const s = after();
       const did = cmd.amount > 0 ? `Apartaste ${fmt(cmd.amount)}` : `Devolviste ${fmt(-cmd.amount)}`;
       return `${did}. Ahorro total: ${fmt(s.savedTotal)}.\n${brief(s)}`;
     }
+    case 'set_rate':
+      store.setUsdRate(cmd.rate, today);
+      return rateSaved(cmd.rate);
     case 'set_fixed':
       store.upsertFixed({ name: cmd.name, amount: cmd.amount, day: cmd.day, since: today });
       return `Fijo guardado: ${cmd.name}, ${fmt(cmd.amount)} el día ${cmd.day}.\n${brief(after())}`;

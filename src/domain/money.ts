@@ -8,10 +8,19 @@ export function parseAmount(raw: string): number | null {
   return null;
 }
 
-export function fmt(cents: number): string {
+function format(symbol: string, cents: number): string {
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(Math.round(cents));
   const whole = Math.floor(abs / 100).toLocaleString('en-US');
   const dec = abs % 100;
-  return `${sign}S/ ${whole}${dec ? `.${String(dec).padStart(2, '0')}` : ''}`;
+  return `${sign}${symbol} ${whole}${dec ? `.${String(dec).padStart(2, '0')}` : ''}`;
 }
+
+export const fmt = (cents: number) => format('S/', cents);
+export const fmtUsd = (cents: number) => format('US$', cents);
+
+/** Convierte centavos de dólar a céntimos de sol con el tipo de cambio dado (soles por dólar). */
+export const usdToPen = (usdCents: number, rate: number) => Math.round(usdCents * rate);
+
+/** Un tipo de cambio PEN/USD razonable: fuera de este rango es un error de la fuente. */
+export const isSaneRate = (rate: number) => Number.isFinite(rate) && rate > 2 && rate < 6;

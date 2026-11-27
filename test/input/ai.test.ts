@@ -43,7 +43,7 @@ type Reading = import('../../src/input/ai').Reading;
 type Provider = import('../../src/input/ai').Provider;
 
 function reading(p: Partial<Reading> = {}): Reading {
-  return { action: 'expense', amount: 15, description: 'menu', card: '', days_ago: 0, question: '', ...p };
+  return { action: 'expense', amount: 15, description: 'menu', card: '', days_ago: 0, question: '', currency: 'PEN', category: 'comida', ...p };
 }
 
 const DAY = '2026-11-04';
@@ -137,7 +137,7 @@ describe('proveedores reales contra un servidor falso', () => {
 describe('validación de lo que dice la IA', () => {
   test('gasto de ayer con tarjeta', () => {
     expect(toCommand(reading({ amount: 80, card: 'CMR', days_ago: 1 }), aliases, DAY))
-      .toEqual({ type: 'expense', amount: 8000, description: 'menu', cardId: 1, day: '2026-11-03' });
+      .toEqual({ type: 'expense', amount: 8000, description: 'menu', cardId: 1, day: '2026-11-03', category: 'comida' });
   });
   test('Yape no es una tarjeta', () => {
     expect(toCommand(reading({ card: 'yape' }), aliases, DAY)).toMatchObject({ type: 'expense', cardId: null });
