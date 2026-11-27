@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="t">
+  <title id="t">YiuBinance: monograma S/</title>
+  <!-- Telegram recorta la foto en círculo: el monograma queda dentro del centro. -->
+  <rect width="512" height="512" fill="#111114"/>
+  <g fill="none" stroke-linecap="round" stroke-width="44">
+    <!-- S: dos arcos de radio 56 que se tocan en el centro (204, 256). Sin fuentes: se ve igual en todas partes. -->
+    <path stroke="#F5F5F0" d="M249.9 167.9 A56 56 0 1 0 204 256 A56 56 0 1 1 158.1 344.1"/>
+    <!-- La barra de "S/" -->
+    <path stroke="#C8F560" d="M296 368 L356 144"/>
+  </g>
+</svg>
