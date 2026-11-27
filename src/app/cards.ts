@@ -12,6 +12,6 @@ export function saveCard(store: Store, today: Day, c: { name: string; limit: num
   const shown = displayName(c.name);
   const id = store.upsertCard({ name: shown, aliases, limit: c.limit, closeDay: c.closeDay, dueDay: c.dueDay });
   const delta = c.debt - debtOf(store.ledger().txns, id);
-  if (c.debt > 0 && delta !== 0) store.addTxn({ day: today, kind: 'debt_adjust', amount: delta, description: 'deuda inicial', cardId: id });
+  if (c.debt > 0 && delta !== 0) store.addTxn({ day: today, kind: 'debt_adjust', amount: delta, description: 'deuda inicial', cardId: id, auto: true });
   return shown;
 }

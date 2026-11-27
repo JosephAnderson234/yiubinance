@@ -2,6 +2,7 @@
 import { Bot } from './adapters/bot';
 import { Store } from './adapters/store';
 import { Telegram } from './adapters/telegram';
+import { openErApi } from './app/fx';
 import { loadConfig, type Config } from './config';
 import { createAi } from './input/ai';
 
@@ -16,7 +17,7 @@ try {
 const store = new Store(config.dbPath);
 const tg = new Telegram(config.token, config.telegramApi);
 const ai = await createAi(process.env);
-const bot = new Bot(store, tg, config.ownerId, config.backupPath, ai);
+const bot = new Bot(store, tg, config.ownerId, config.backupPath, ai, openErApi);
 
 const TICK_MS = 60_000;
 const RETRY_MS = 5_000;

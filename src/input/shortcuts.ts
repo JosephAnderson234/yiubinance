@@ -1,8 +1,9 @@
 // Convierte lo que escribes en el chat en un comando. No toca la base de datos.
+import { isCategory, type Category } from '../domain/categories';
 import type { Command } from '../domain/command';
 import { WEEKDAYS } from '../domain/dates';
 import type { Aliases } from '../domain/ledger';
-import { parseAmount } from '../domain/money';
+import { isSaneRate, parseAmount } from '../domain/money';
 import { normalize } from '../domain/normalize';
 
 /** Quita un alias de tarjeta del final del texto, si lo hay. */
@@ -36,6 +37,32 @@ function spending(text: string, aliases: Aliases) {
   return { amount: parsed.amount, description, cardId };
 }
 
+/** Quita '$', 'usd' o 'dolares' (gasto en dólares) y '#categoria' del texto. */
+function takeTags(text: string) {
+  let t = text;
+  let currency: 'USD' | undefined;
+  let category: Category | undefined;
+  const tag = t.match(/(?:^| )#(\S+)/);
+  if (tag && isCategory(tag[1]!)) {
+    category = tag[1];
+    t = t.replace(tag[0], ' ');
+  }
+  if (/\$\s*(?=\d)/.test(t)) {
+    currency = 'USD';
+    t = t.replace(/\$\s*(?=\d)/, '');
+  } else if (/(?:^| )(usd|dolares|dolar|dls)(?= |$)/.test(t)) {
+    currency = 'USD';
+    t = t.replace(/(?:^| )(usd|dolares|dolar|dls)(?= |$)/, ' ');
+  }
+  return { text: t.replace(/\s+/g, ' ').trim(), currency, category };
+}
+
+const withTags = <T extends object>(cmd: T, tags: { currency?: 'USD'; category?: Category }, category = true) => ({
+  ...cmd,
+  ...(tags.currency && { currency: tags.currency }),
+  ...(category && tags.category && { category: tags.category }),
+});
+
 const validDay = (n: number) => Number.isInteger(n) && n >= 1 && n <= 31;
 
 export function parse(raw: string, aliases: Aliases): Command {
@@ -48,6 +75,12 @@ export function parse(raw: string, aliases: Aliases): Command {
   if (/^\/?(deshacer|borrar|undo)$/.test(t)) return { type: 'undo' };
   if (/^\/?ultimos$/.test(t)) return { type: 'recent' };
   if (/^\/?(ajustes|config)$/.test(t)) return { type: 'settings' };
+  if (/^\/?(mes|resumen mes|resumen del mes)$/.test(t)) return { type: 'month', offset: 0 };
+  if (/^\/?(mes pasado|resumen mes pasado|resumen del mes pasado)$/.test(t)) return { type: 'month', offset: -1 };
+  if ((m = t.match(/^(?:dolar|tipo de cambio|tc) (\d+(?:[.,]\d+)?)$/))) {
+    const rate = Number(m[1]!.replace(',', '.'));
+    if (isSaneRate(rate)) return { type: 'set_rate', rate };
+  }
 
   if ((m = t.match(/^borrar (fijo|ingreso|tarjeta) (.+)$/))) {
     return { type: 'remove', what: m[1] as 'fijo' | 'ingreso' | 'tarjeta', name: m[2]! };
@@ -91,13 +124,14 @@ export function parse(raw: string, aliases: Aliases): Command {
     const amount = parseAmount(m[2]!);
     if (amount) return { type: 'saving', amount: m[1] ? -amount : amount };
   }
-  if ((m = t.match(/^\+\s*(\S+)\s*(.*)$/))) {
+  const tags = takeTags(t);
+  if ((m = tags.text.match(/^\+\s*(\S+)\s*(.*)$/))) {
     const amount = parseAmount(m[1]!);
-    if (amount) return { type: 'income', amount, description: m[2]!.trim() };
+    if (amount) return withTags({ type: 'income' as const, amount, description: m[2]!.trim() }, tags, false);
   }
-  if ((m = t.match(/^(?:puedo|se puede)(?: gastar| comprar| pagar)?\s+(.+)$/))) {
+  if ((m = tags.text.match(/^(?:puedo|se puede)(?: gastar| comprar| pagar)?\s+(.+)$/))) {
     const s = spending(m[1]!, aliases);
-    if (s) return { type: 'ask', ...s };
+    if (s) return withTags({ type: 'ask' as const, ...s }, tags, false);
   }
   if ((m = t.match(/^(?:cuenta|estado|deuda)\s+(.+)$/))) {
     const parsed = amountAndText(m[1]!);
@@ -115,6 +149,6 @@ export function parse(raw: string, aliases: Aliases): Command {
     }
   }
 
-  const s = spending(t, aliases);
-  return s ? { type: 'expense', ...s } : { type: 'unknown' };
+  const s = spending(tags.text, aliases);
+  return s ? withTags({ type: 'expense' as const, ...s }, tags) : { type: 'unknown' };
 }

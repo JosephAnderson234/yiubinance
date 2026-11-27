@@ -1,6 +1,6 @@
 // Lógica financiera pura: recibe el libro y una fecha, devuelve cómo vas.
 import { addDays, diffDays, monthDay, nextMonthlyAfter, prevMonthly, weekday, type Day } from './dates';
-import type { Card, Ledger, Txn } from './ledger';
+import type { Card, Fixed, Ledger, Txn } from './ledger';
 
 export type State = 'sobrado' | 'normal' | 'suave' | 'alerta';
 export type Alert =
@@ -30,6 +30,8 @@ export interface Snapshot {
   goalLeft: number;
   fixedPending: { name: string; amount: number; date: Day }[];
   fixedTotal: number;
+  fixedUpcoming: { name: string; amount: number; reserve: number; date: Day }[]; // fijos de después del ciclo
+  fixedReserve: number;
   cards: CardStatus[];
   reserve: number;
   libre: number;
@@ -108,8 +110,28 @@ export function pendingFixed(l: Ledger, today: Day, until: Day) {
       if (date > until) break;
       if (date < f.since) continue;
       const month = date.slice(0, 7);
-      const paid = l.txns.some((t) => t.fixedId === f.id && t.day.slice(0, 7) === month);
-      if (!paid) out.push({ name: f.name, amount: f.amount, date });
+      if (!paidIn(l, f, month)) out.push({ name: f.name, amount: f.amount, date });
+    }
+  }
+  return out;
+}
+
+const paidIn = (l: Ledger, f: Fixed, month: string) => l.txns.some((t) => t.fixedId === f.id && t.day.slice(0, 7) === month);
+
+/** Parte ya acumulada para el próximo pago de un fijo que vence después del ciclo, igual que con las tarjetas. */
+function fixedUpcoming(l: Ledger, today: Day, cycleEnd: Day) {
+  const out: Snapshot['fixedUpcoming'] = [];
+  for (const f of l.fixed) {
+    for (let m = 0; m < 3; m++) {
+      const date = monthDay(today, f.day, m);
+      if (date <= cycleEnd || date < f.since || paidIn(l, f, date.slice(0, 7))) continue;
+      // Se acumula entre el vencimiento anterior y este. Antes del anterior aún no toca apartar nada.
+      const prev = monthDay(date, f.day, -1);
+      const total = weeklyBetween(l, prev, date).count;
+      const left = weeklyBetween(l, today > prev ? today : prev, date).count;
+      const share = total === 0 ? (today >= prev ? 1 : 0) : (total - left) / total;
+      out.push({ name: f.name, amount: f.amount, reserve: Math.round(f.amount * share), date });
+      break;
     }
   }
   return out;
@@ -161,17 +183,20 @@ export function snapshot(l: Ledger, today: Day): Snapshot {
 
   const fixedPending = pendingFixed(l, today, cycleEnd);
   const fixedTotal = fixedPending.reduce((s, f) => s + f.amount, 0);
+  const upcoming = fixedUpcoming(l, today, cycleEnd);
+  const fixedReserve = upcoming.reduce((s, f) => s + f.reserve, 0);
   const cards = l.cards.map((c) => cardStatus(l, c, today));
   const reserve = cards.reduce((s, c) => s + c.reserve, 0);
-  const libre = saldo - savedTotal - goalLeft - fixedTotal - reserve;
+  const libre = saldo - savedTotal - goalLeft - fixedTotal - fixedReserve - reserve;
 
   // Una compra con tarjeta solo baja el libre en la parte ya apartada, y así se cuenta en el ritmo.
+  // Pagar un fijo no es gastar de más: ya estaba apartado, así que no cuenta en el ritmo.
   const cash = l.txns
-    .filter((t) => t.kind === 'expense' && t.day >= cycleStart)
+    .filter((t) => t.kind === 'expense' && t.fixedId === null && t.day >= cycleStart)
     .reduce((s, t) => s + t.amount, 0);
   const onCard = cards.reduce((sum, c) => {
     const bought = l.txns
-      .filter((t) => t.kind === 'purchase' && t.cardId === c.card.id && t.day >= cycleStart)
+      .filter((t) => t.kind === 'purchase' && t.fixedId === null && t.cardId === c.card.id && t.day >= cycleStart)
       .reduce((s, t) => s + t.amount, 0);
     return sum + bought * c.fraction;
   }, 0);
@@ -195,6 +220,7 @@ export function snapshot(l: Ledger, today: Day): Snapshot {
 
   return {
     today, cycleStart, cycleEnd, daysLeft, saldo, savedTotal, goalLeft, fixedPending, fixedTotal,
+    fixedUpcoming: upcoming, fixedReserve,
     cards, reserve, libre, perDay, spent, budget, ratio, state, alert, lineWarning,
   };
 }

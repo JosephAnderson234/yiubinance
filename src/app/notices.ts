@@ -2,6 +2,7 @@
 import type { Flag, Store } from '../adapters/store';
 import { addDays, diffDays, localDay, localHour, monthDay, nextMonthlyOn, prevMonthly, weekday, type Day } from '../domain/dates';
 import type { Ledger } from '../domain/ledger';
+import { monthOf, monthReport, spendByCategory } from '../domain/reports';
 import { billedOf, paydayWeekday, snapshot } from '../domain/snapshot';
 import { notices as say } from '../replies/es';
 
@@ -16,12 +17,9 @@ const TOP_SPENDS = 3;
 
 function weeklySummary(l: Ledger, today: Day): string {
   const from = addDays(today, -6);
-  const week = l.txns.filter((t) => (t.kind === 'expense' || t.kind === 'purchase') && t.day >= from && t.day <= today);
-  const total = week.reduce((s, t) => s + t.amount, 0);
-  const byName = new Map<string, number>();
-  for (const t of week) byName.set(t.description, (byName.get(t.description) ?? 0) + t.amount);
-  const top = [...byName].sort((a, b) => b[1] - a[1]).slice(0, TOP_SPENDS);
-  return say.weeklySummary(total, top, snapshot(l, today));
+  const byCategory = spendByCategory(l, from, today);
+  const total = byCategory.reduce((s, [, a]) => s + a, 0);
+  return say.weeklySummary(total, byCategory.slice(0, TOP_SPENDS), snapshot(l, today));
 }
 
 export function dueNotices(store: Store, ms: number): Notice[] {
@@ -36,6 +34,12 @@ export function dueNotices(store: Store, ms: number): Notice[] {
   }
 
   if (hour >= MORNING) {
+    // El primer día del mes, el resumen del mes que cerró. Solo si hubo movimientos.
+    if (today.endsWith('-01')) {
+      const r = monthReport(l, monthOf(today, -1));
+      if (r.spent || r.fixedPaid || r.income) out.push({ flag: `month:${r.month}`, text: say.monthly(r) });
+    }
+
     for (const card of l.cards) {
       const billed = billedOf(l.txns, card, today);
       if (prevMonthly(today, card.closeDay) === today) {

@@ -9,7 +9,8 @@ const cmr: Card = { id: 1, name: 'CMR', aliases: ['cmr'], limit: 50_000, closeDa
 
 let nextId = 1;
 const txn = (p: Partial<Txn>): Txn => ({
-  id: nextId++, day: '2026-11-01', kind: 'expense', amount: 0, description: '', cardId: null, fixedId: null, incomeId: null, ...p,
+  id: nextId++, day: '2026-11-01', kind: 'expense', amount: 0, description: '', cardId: null, fixedId: null, incomeId: null,
+  category: '', currency: 'PEN', original: null, auto: false, ...p,
 });
 const ledger = (p: Partial<Ledger> = {}): Ledger => ({
   txns: [], cards: [cmr], fixed: [], incomes: [weekly], savingGoal: 0, ...p,
@@ -30,14 +31,18 @@ describe('ciclo', () => {
 });
 
 describe('libre', () => {
-  test('resta los fijos que vencen antes del domingo y no los de después', () => {
+  test('resta completo el fijo de la semana y aparta de a poco el que vence después', () => {
     const fixed = [
       { id: 1, name: 'internet', amount: 8_000, day: 6, since: '2026-10-01' },
       { id: 2, name: 'luz', amount: 5_000, day: 20, since: '2026-10-01' },
     ];
     const s = snapshot(ledger({ cards: [], txns: [cash(30_000)], fixed }), WED);
     expect(s.fixedTotal).toBe(8_000);
-    expect(s.libre).toBe(22_000);
+    // luz vence el 20: de los 4 domingos entre el 20/10 y el 20/11 ya pasaron 2, así que va la mitad.
+    expect(s.fixedUpcoming.find((f) => f.name === 'luz')).toEqual({ name: 'luz', amount: 5_000, reserve: 2_500, date: '2026-11-20' });
+    // El internet de diciembre recién empieza a apartarse después de que venza el de noviembre.
+    expect(s.fixedUpcoming.find((f) => f.name === 'internet')!.reserve).toBe(0);
+    expect(s.libre).toBe(19_500);
   });
 
   test('un fijo pagado deja de restar', () => {

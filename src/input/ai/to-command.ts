@@ -27,6 +27,7 @@ export function toCommand(r: Reading, aliases: Aliases, today: Day, fromImage = 
   const cardId = aliases.get(name) ?? null;
   const unknownCard = name !== '' && cardId === null && !CASH_WORDS.includes(name);
   const cards = [...aliases.keys()].join(', ');
+  const usd = r.currency === 'USD' ? { currency: 'USD' as const } : {};
 
   switch (r.action) {
     case 'expense':
@@ -34,14 +35,15 @@ export function toCommand(r: Reading, aliases: Aliases, today: Day, fromImage = 
       if (!amount) return clarify('¿Cuánto fue?');
       if (unknownCard) return clarify(`No tengo esa tarjeta. ¿Fue con ${cards} o con Yape?`);
       return r.action === 'ask'
-        ? { type: 'ask', amount, description, cardId }
-        : { type: 'expense', amount, description, cardId, day };
+        ? { type: 'ask', amount, description, cardId, ...usd }
+        : { type: 'expense', amount, description, cardId, day, category: r.category, ...usd };
     case 'income':
       if (!amount) return clarify('¿Cuánto te entró?');
-      return { type: 'income', amount, description: r.description ? description : '', day };
+      return { type: 'income', amount, description: r.description ? description : '', day, ...usd };
     case 'card_payment':
       if (cardId === null) return clarify(`¿A qué tarjeta? Tengo: ${cards}.`);
-      return { type: 'pay', cardId, amount: amount || null };
+      if (r.currency === 'USD') return clarify('¿Cuánto pagaste en soles?');
+      return { type: 'pay', cardId, amount: amount || null, ...(ago > 0 && { day }) };
     case 'card_statement':
       if (cardId === null) return clarify(`¿De qué tarjeta? Tengo: ${cards}.`);
       return { type: 'statement', cardId, amount };
@@ -55,6 +57,10 @@ export function toCommand(r: Reading, aliases: Aliases, today: Day, fromImage = 
       return { type: 'status' };
     case 'recent':
       return { type: 'recent' };
+    case 'month':
+      return { type: 'month', offset: 0 };
+    case 'last_month':
+      return { type: 'month', offset: -1 };
     case 'undo':
       return { type: 'undo' };
     case 'clarify':

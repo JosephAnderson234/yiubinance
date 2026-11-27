@@ -1,7 +1,8 @@
 // SQLite. La tabla meta guarda el estado suelto del bot; fuera de aquí solo se usa con nombres tipados.
 import { Database } from 'bun:sqlite';
+import { categorize } from '../domain/categories';
 import type { Day } from '../domain/dates';
-import type { Card, Fixed, Income, Ledger, Txn, TxnKind } from '../domain/ledger';
+import type { Card, Currency, Fixed, Income, Ledger, Txn, TxnKind } from '../domain/ledger';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -19,10 +20,37 @@ CREATE TABLE IF NOT EXISTS txns (
   description TEXT NOT NULL DEFAULT '', card_id INTEGER, fixed_id INTEGER, income_id INTEGER);
 `;
 
+/** Cambios de esquema en orden. PRAGMA user_version guarda cuántos ya se aplicaron. */
+const MIGRATIONS: ((db: Database) => void)[] = [
+  (db) => {
+    db.exec(`
+      ALTER TABLE txns ADD COLUMN category TEXT NOT NULL DEFAULT '';
+      ALTER TABLE txns ADD COLUMN currency TEXT NOT NULL DEFAULT 'PEN';
+      ALTER TABLE txns ADD COLUMN original INTEGER;
+      ALTER TABLE txns ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
+      UPDATE txns SET auto = 1
+        WHERE (kind = 'adjust' AND description = 'saldo inicial') OR (kind = 'debt_adjust' AND description = 'deuda inicial');
+    `);
+    const rows = db.query("SELECT id, description FROM txns WHERE kind IN ('expense', 'purchase')").all() as { id: number; description: string }[];
+    const set = db.query('UPDATE txns SET category = ? WHERE id = ?');
+    for (const r of rows) set.run(categorize(r.description), r.id);
+  },
+];
+
+function migrate(db: Database) {
+  const { user_version: done } = db.query('PRAGMA user_version').get() as { user_version: number };
+  for (let v = done; v < MIGRATIONS.length; v++) {
+    db.transaction(() => {
+      MIGRATIONS[v]!(db);
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+    })();
+  }
+}
+
 export type Step = 'saldo' | 'tarjetas' | 'semana' | 'quincena' | 'fijos' | 'ahorro' | 'done';
 export interface Pending { text: string; question: string; at: number }
-export type Flag = `${'summary' | 'close' | 'due' | 'late' | 'idle' | 'backup'}:${string}`;
-type MetaKey = 'step' | 'saving_goal' | 'offset' | 'dirty' | 'pending' | Flag;
+export type Flag = `${'summary' | 'month' | 'close' | 'due' | 'late' | 'idle' | 'backup' | 'photo'}:${string}`;
+type MetaKey = 'step' | 'saving_goal' | 'offset' | 'dirty' | 'pending' | 'usd_rate' | 'usd_rate_day' | Flag;
 
 export type NewTxn = {
   day: Day;
@@ -32,6 +60,10 @@ export type NewTxn = {
   cardId?: number | null;
   fixedId?: number | null;
   incomeId?: number | null;
+  category?: string;
+  currency?: Currency;
+  original?: number | null;
+  auto?: boolean;
 };
 
 export class Store {
@@ -41,6 +73,7 @@ export class Store {
     this.db = new Database(path);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec(SCHEMA);
+    migrate(this.db);
   }
 
   private get(key: MetaKey): string | null {
@@ -77,6 +110,17 @@ export class Store {
   }
   setPending(p: Pending) { this.set('pending', JSON.stringify(p)); }
 
+  /** Tipo de cambio en soles por dólar, y el día en que se obtuvo. */
+  get usdRate(): number | null {
+    const v = this.get('usd_rate');
+    return v ? Number(v) : null;
+  }
+  get usdRateDay(): Day | null { return this.get('usd_rate_day'); }
+  setUsdRate(rate: number, day: Day) {
+    this.set('usd_rate', String(rate));
+    this.set('usd_rate_day', day);
+  }
+
   /** Marcas de una sola vez: avisos ya enviados y backups del día. */
   hasFlag(flag: Flag) { return this.get(flag) !== null; }
   setFlag(flag: Flag) { this.set(flag, '1'); }
@@ -85,6 +129,7 @@ export class Store {
     const txns = this.db.query('SELECT * FROM txns ORDER BY id').all().map((r: any): Txn => ({
       id: r.id, day: r.day, kind: r.kind, amount: r.amount, description: r.description,
       cardId: r.card_id, fixedId: r.fixed_id, incomeId: r.income_id,
+      category: r.category, currency: r.currency, original: r.original, auto: r.auto === 1,
     }));
     const cards = this.db.query('SELECT * FROM cards WHERE active = 1 ORDER BY id').all().map((r: any): Card => ({
       id: r.id, name: r.name, aliases: r.aliases.split('|'), limit: r.limit_cents, closeDay: r.close_day, dueDay: r.due_day,
@@ -101,8 +146,22 @@ export class Store {
 
   addTxn(t: NewTxn) {
     this.db
-      .query('INSERT INTO txns (day, kind, amount, description, card_id, fixed_id, income_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(t.day, t.kind, t.amount, t.description ?? '', t.cardId ?? null, t.fixedId ?? null, t.incomeId ?? null);
+      .query(`INSERT INTO txns (day, kind, amount, description, card_id, fixed_id, income_id, category, currency, original, auto)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        t.day, t.kind, t.amount, t.description ?? '', t.cardId ?? null, t.fixedId ?? null, t.incomeId ?? null,
+        t.category ?? '', t.currency ?? 'PEN', t.original ?? null, t.auto ? 1 : 0,
+      );
+  }
+
+  /** Último movimiento que registró el usuario; ignora los que creó la configuración. */
+  lastUserTxn(): Txn | null {
+    return this.ledger().txns.findLast((t) => !t.auto) ?? null;
+  }
+
+  lastTxnId(): number {
+    const row = this.db.query('SELECT MAX(id) AS id FROM txns').get() as { id: number | null };
+    return row.id ?? 0;
   }
 
   deleteTxn(id: number) {
