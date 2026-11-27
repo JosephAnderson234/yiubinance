@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/avatar.svg" width="160" alt="Moneda dorada con lentes de sol, el avatar de YiuBinance">
+  <img src="assets/avatar.svg" width="160" alt="Monograma S/ de YiuBinance">
 </p>
 
 <h1 align="center">YiuBinance</h1>
