@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Access } from '../src/adapters/access';
 import { Bot } from '../src/adapters/bot';
 import { Store } from '../src/adapters/store';
 import { refreshRate } from '../src/app/fx';
@@ -81,7 +82,8 @@ describe('capturas repetidas', () => {
     const sent: string[] = [];
     const tg = { send: async (_: number, t: string) => { sent.push(t); }, download: async () => new Blob([bytes()]) } as any;
     const s = configured();
-    return { s, sent, bot: new Bot(s, tg, 7, join(mkdtempSync(join(tmpdir(), 'suave-')), 'b.db'), fakeAi({}, {}, {})) };
+    const access = new Access(7, s, mkdtempSync(join(tmpdir(), 'suave-')), { memory: true });
+    return { s, sent, bot: new Bot(tg, access, fakeAi({}, {}, {})) };
   }
 
   test('la misma imagen no se anota dos veces', async () => {
@@ -146,19 +148,19 @@ describe('dólares', () => {
     const s = new Store();
     let calls = 0;
     const source = async () => { calls++; return 3.71; };
-    expect(await refreshRate(s, source, MS)).toBe(true);
-    expect(await refreshRate(s, source, MS)).toBe(false);
+    expect(await refreshRate([s], source, MS)).toBe(true);
+    expect(await refreshRate([s], source, MS)).toBe(false);
     expect(calls).toBe(1);
     expect(s.usdRate).toBe(3.71);
-    expect(await refreshRate(s, async () => 371, at('2026-11-05', 9))).toBe(false);
-    expect(await refreshRate(s, async () => { throw new Error('caída'); }, at('2026-11-05', 9))).toBe(false);
+    expect(await refreshRate([s], async () => 371, at('2026-11-05', 9))).toBe(false);
+    expect(await refreshRate([s], async () => { throw new Error('caída'); }, at('2026-11-05', 9))).toBe(false);
     expect(s.usdRate).toBe(3.71);
   });
 
   test('el bot actualiza el tipo de cambio en sus avisos', async () => {
     const s = configured();
     const tg = { send: async () => {}, sendDocument: async () => {} } as any;
-    const b = new Bot(s, tg, 7, join(mkdtempSync(join(tmpdir(), 'suave-')), 'b.db'), null, async () => 3.69);
+    const b = new Bot(tg, new Access(7, s, mkdtempSync(join(tmpdir(), 'suave-')), { memory: true }), null, async () => 3.69);
     await b.tick(MS);
     expect(s.usdRate).toBe(3.69);
     expect(s.usdRateDay).toBe(DAY);

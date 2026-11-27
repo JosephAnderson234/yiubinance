@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Access } from '../src/adapters/access';
 import { Bot } from '../src/adapters/bot';
 import { Store } from '../src/adapters/store';
 import type { Telegram } from '../src/adapters/telegram';
@@ -201,24 +202,26 @@ describe('bot', () => {
       sendDocument: async (_: number, __: string, name: string) => { docs.push(name); },
     } as unknown as Telegram;
     const s = new Store();
-    const bot = new Bot(s, tg, 7, join(mkdtempSync(join(tmpdir(), 'suave-')), 'b.db'));
-    return { s, bot, sent, docs };
+    const access = new Access(7, s, mkdtempSync(join(tmpdir(), 'suave-')), { memory: true });
+    const bot = new Bot(tg, access);
+    return { s, bot, sent, docs, access };
   }
   const msg = (update_id: number, from: number, text?: string) => ({
     update_id, message: { chat: { id: from }, from: { id: from }, text },
   });
 
-  test('ignora a cualquiera que no sea el dueño', async () => {
-    const { s, bot, sent } = fake();
+  test('a alguien que no es el dueño no le atiende sus finanzas', async () => {
+    const { s, bot, sent, access } = fake();
     await bot.onUpdate(msg(1, 999, '/start'));
-    expect(sent).toEqual([]);
+    expect(sent[0]).toContain('le pedí acceso al dueño');
     expect(s.step).toBeNull();
+    expect(access.canUse(999)).toBe(false);
   });
 
   test('guarda el offset para no reprocesar mensajes', async () => {
-    const { s, bot } = fake();
+    const { bot, access } = fake();
     await bot.onUpdate(msg(41, 7, '/start'));
-    expect(s.offset).toBe(42);
+    expect(access.offset).toBe(42);
   });
 
   test('responde al dueño y avisa si manda algo que no entiende', async () => {

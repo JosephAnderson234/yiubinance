@@ -35,6 +35,7 @@ process.env.GROQ_API = `http://127.0.0.1:${server.port}/openai/v1`;
 
 const { Ai, AiUnavailable, claudeProvider, createAi, groqProvider, toCommand } = await import('../../src/input/ai');
 const { handle, looksNatural, respond, respondToImage } = await import('../../src/input/router');
+const { Access } = await import('../../src/adapters/access');
 const { Bot } = await import('../../src/adapters/bot');
 const { snapshot } = await import('../../src/domain/snapshot');
 const { Store } = await import('../../src/adapters/store');
@@ -304,7 +305,8 @@ describe('audios y fotos en el bot', () => {
       download: async () => new Blob(['datos']),
     } as any;
     const s = configured();
-    return { s, sent, bot: new Bot(s, tg, 7, join(mkdtempSync(join(tmpdir(), 'suave-')), 'b.db'), ai) };
+    const access = new Access(7, s, mkdtempSync(join(tmpdir(), 'suave-')), { memory: true });
+    return { s, sent, bot: new Bot(tg, access, ai) };
   }
   const update = (message: object) => ({ update_id: 1, message: { chat: { id: 7 }, from: { id: 7 }, ...message } });
 
